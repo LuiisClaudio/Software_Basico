@@ -1,0 +1,342 @@
+LUIS CLAUDIO CANTANHEDE MARTINS – 1512946
+
+
+QUESTÃO 1) Usando processos, escreva um programa C que implemente o problema do
+produtor/consumidor.
+O produtor e o consumidor devem ser filhos de um processo pai.
+O produtor deve produzir dados (números inteiros pseudo-aleatórios) a cada 1 segundo
+colocando-os em uma fila (buffer, implementação circular).
+O consumidor deve retirar dados da fila a cada 2 segundos.
+O tamanho máximo da fila deve ser de 8 elementos (MAXFILA) e tanto o produtor como o
+consumidor devem produzir/consumir 64 elementos (números inteiros de 1 a 64, por
+exemplo).
+Usar as funções pause() para o processo dormir e kill (pid, SIGCONT) para acordar o outro
+processo.
+
+#include <stdio.h>
+#include <sys/shm.h>
+#include <signal.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdlib.h>
+
+
+#define MAXITENS 64
+#define MAXQUEUE 8
+
+
+typedef struct circularQueue {
+	int queue[MAXQUEUE];
+	int ini;
+	int end;
+	int size;
+} circularQueue;
+
+void inicialize(circularQueue * q);
+void insert(circularQueue * q, int value);
+int removee(circularQueue * q);
+int isFull(circularQueue * q);
+int isEmpty(circularQueue * q);
+
+void make(circularQueue * queue, int pidProd, int pidCons);
+void consume(circularQueue * queue, int pidCons, int pidProd);
+
+int main (void) {
+	int seg1, seg2, status;
+	int pidProd, pidCons, *sharedPidCons;
+	circularQueue * queue;
+	
+	// Aloca a memória compartilhada
+	seg1 = shmget (IPC_PRIVATE, sizeof(circularQueue), IPC_CREAT | IPC_EXCL | S_IRUSR |  S_IWUSR);
+	seg2 = shmget (IPC_PRIVATE, sizeof(int), IPC_CREAT | IPC_EXCL | S_IRUSR |  S_IWUSR);
+	
+	// Associa a memória compartilhada ao processo
+	queue = (circularQueue *) shmat (seg1, 0, 0);
+	sharedPidCons = (int *) shmat (seg2, 0, 0);
+	
+	inicialize(queue);
+	*sharedPidCons = 0;
+	
+	pidProd = fork();
+	
+	if (pidProd != 0) { // Processo pai
+		pidCons = fork();
+		
+		if (pidCons != 0) { // Processo pai
+			*sharedPidCons = pidCons;
+			shmdt(sharedPidCons);
+			
+			waitpid (-1, &status, 0);
+			waitpid (-1, &status, 0);
+			
+			printf("Programa chegou no seu final\n");
+			
+			shmdt(queue);
+			shmctl(seg1, IPC_RMID, 0);
+		}
+		else { // Processo consumidor
+			printf("Cosumidor foi inicializado\n");
+			
+			shmdt(sharedPidCons);
+			pidCons = getpid();
+			
+			consume(queue, pidCons, pidProd);
+			
+			shmdt(queue);
+			exit(1);
+		}
+	}
+	else { // Processo produtor
+		while (*sharedPidCons == 0);
+		printf("Produtor foi inicializado\n");
+		
+		pidCons = *sharedPidCons;
+		shmctl(seg2, IPC_RMID, 0);
+		pidProd = getpid();
+		
+		make(queue, pidProd, pidCons);
+		
+		shmdt(queue);
+		exit(1);
+	}
+	
+	return 0;
+}
+
+void make(circularQueue * queue, int pidProd, int pidCons)
+ {
+	int i, item;
+	
+	for (i = 0; i < MAXITENS; i++) {
+		// Gero item diferente de 0
+		item = rand()%100 + 1;
+		
+		// Recebo sinal de lotada
+		if (isFull(queue))
+			kill(pidProd, SIGSTOP);
+		
+		// Insiro item
+		insert(queue, item);
+		printf("Produtor %d produziu um item, valor do item %d\n", i + 1, item);
+		
+		// Mando sinal de nao vazia
+		if (queue->size == 1)
+			kill(pidCons, SIGCONT);
+		
+		sleep(1);
+	}
+}
+
+void consume(circularQueue * queue, int pidCons, int pidProd)
+{
+	int i, item;
+	
+	for (i = 0; i < MAXITENS; i++) {
+		// Recebo sinal de vazia
+		if (isEmpty(queue))
+			kill(pidCons, SIGSTOP);
+		
+		// Consumo item
+		item = removee(queue);
+		
+		// Mando sinal de nao lotada
+		if (queue->size == MAXQUEUE - 1)
+			kill(pidProd, SIGCONT);
+		
+		printf("Cosumidor %d consumiu, valor %d\n", i + 1, item);
+		sleep(2);
+	}
+}
+
+/// Fila Circular - implementacao
+
+void inicialize(circularQueue * q) {
+	int i;
+	
+	for (i = 0; i < MAXQUEUE; i++) {
+		q->queue[i] = 0;
+	}
+	
+	q->ini = 0;
+	q->end = 0;
+	q->size = 0;
+}
+
+void insert(circularQueue * q, int value)
+ {
+	q->queue[q->end] = value;
+	q->end = (q->end + 1) % MAXQUEUE;
+	(q->size)++;
+}
+
+int removee(circularQueue * q)
+{
+	int value;
+	value = q->queue[q->ini];
+	
+	q->queue[q->ini] = 0;
+	q->ini = (q->ini + 1) % MAXQUEUE;
+	(q->size)--;
+	
+	return value;
+}
+
+int isFull(circularQueue * q)
+{
+	return q->size == MAXQUEUE;
+}
+
+int isEmpty(circularQueue * q)
+{
+	return q->size == 0;
+}
+
+
+-----------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+
+$ gcc -o lab4 lab4.c
+$ ./lab4
+-----------------------------------------------------
+RESULTADO
+
+Produtor foi inicializado
+Cosumidor foi inicializado
+Produtor 	1 produziu um item, valor do item 8
+Cosumidor 	1 consumiu, valor 8
+Produtor 	2 produziu um item, valor do item 50
+Cosumidor 	2 consumiu, valor 50
+Produtor 	3 produziu um item, valor do item 74
+Produtor 	4 produziu um item, valor do item 59
+Cosumidor 	3 consumiu, valor 74
+Produtor 	5 produziu um item, valor do item 31
+Produtor 	6 produziu um item, valor do item 73
+Cosumidor 	4 consumiu, valor 59
+Produtor 	7 produziu um item, valor do item 45
+Produtor 	8 produziu um item, valor do item 79
+Cosumidor 	5 consumiu, valor 31
+Produtor 	9 produziu um item, valor do item 24
+Produtor 	10 produziu um item, valor do item 10
+Cosumidor 	6 consumiu, valor 73
+Produtor 	11 produziu um item, valor do item 41
+Produtor 	12 produziu um item, valor do item 66
+Cosumidor 	7 consumiu, valor 45
+Produtor 	13 produziu um item, valor do item 93
+Produtor 	14 produziu um item, valor do item 43
+Cosumidor 	8 consumiu, valor 79
+Produtor 	15 produziu um item, valor do item 88
+Produtor 	16 produziu um item, valor do item 4
+Cosumidor 	9 consumiu, valor 24
+Produtor 	17 produziu um item, valor do item 28
+Cosumidor 	10 consumiu, valor 10
+Produtor 	18 produziu um item, valor do item 30
+Cosumidor 	11 consumiu, valor 41
+Produtor 	19 produziu um item, valor do item 41
+Cosumidor 	12 consumiu, valor 66
+Produtor 	20 produziu um item, valor do item 13
+Cosumidor 	13 consumiu, valor 93
+Produtor 	21 produziu um item, valor do item 4
+Cosumidor 	14 consumiu, valor 43
+Produtor 	22 produziu um item, valor do item 70
+Cosumidor 	15 consumiu, valor 88
+Produtor 	23 produziu um item, valor do item 10
+Cosumidor 	16 consumiu, valor 4
+Produtor 	24 produziu um item, valor do item 58
+Cosumidor 	17 consumiu, valor 28
+Produtor 	25 produziu um item, valor do item 61
+Cosumidor 	18 consumiu, valor 30
+Produtor 	26 produziu um item, valor do item 34
+Cosumidor 	19 consumiu, valor 41
+Produtor 	27 produziu um item, valor do item 100
+Cosumidor 	20 consumiu, valor 13
+Produtor 	28 produziu um item, valor do item 79
+Cosumidor 	21 consumiu, valor 4
+Produtor 	29 produziu um item, valor do item 17
+Cosumidor 	22 consumiu, valor 70
+Produtor 	30 produziu um item, valor do item 36
+Cosumidor 	23 consumiu, valor 10
+Produtor 	31 produziu um item, valor do item 98
+Cosumidor 	24 consumiu, valor 58
+Produtor 	32 produziu um item, valor do item 27
+Cosumidor 	25 consumiu, valor 61
+Produtor 	33 produziu um item, valor do item 13
+Cosumidor 	26 consumiu, valor 34
+Produtor 	34 produziu um item, valor do item 68
+Cosumidor 	27 consumiu, valor 100
+Produtor 	35 produziu um item, valor do item 11
+Cosumidor 	28 consumiu, valor 79
+Produtor 	36 produziu um item, valor do item 34
+Cosumidor 	29 consumiu, valor 17
+Produtor 	37 produziu um item, valor do item 80
+Cosumidor 	30 consumiu, valor 36
+Produtor 	38 produziu um item, valor do item 50
+Cosumidor 	31 consumiu, valor 98
+Produtor 	39 produziu um item, valor do item 80
+Cosumidor 	32 consumiu, valor 27
+Produtor 	40 produziu um item, valor do item 22
+Cosumidor 	33 consumiu, valor 13
+Produtor 	41 produziu um item, valor do item 68
+Cosumidor 	34 consumiu, valor 68
+Produtor 	42 produziu um item, valor do item 73
+Cosumidor 	35 consumiu, valor 11
+Produtor 	43 produziu um item, valor do item 94
+Cosumidor 	36 consumiu, valor 34
+Produtor 	44 produziu um item, valor do item 37
+Cosumidor 	37 consumiu, valor 80
+Produtor 	45 produziu um item, valor do item 86
+Cosumidor 	38 consumiu, valor 50
+Produtor 	46 produziu um item, valor do item 46
+Cosumidor 	39 consumiu, valor 80
+Produtor 	47 produziu um item, valor do item 29
+Cosumidor 	40 consumiu, valor 22
+Produtor 	48 produziu um item, valor do item 92
+Cosumidor 	41 consumiu, valor 68
+Produtor 	49 produziu um item, valor do item 95
+Cosumidor 	42 consumiu, valor 73
+Produtor 	50 produziu um item, valor do item 58
+Cosumidor 	43 consumiu, valor 94
+Produtor 	51 produziu um item, valor do item 2
+Cosumidor 	44 consumiu, valor 37
+Produtor 	52 produziu um item, valor do item 54
+Cosumidor 	45 consumiu, valor 86
+Produtor 	53 produziu um item, valor do item 9
+Cosumidor 	46 consumiu, valor 46
+Produtor 	54 produziu um item, valor do item 45
+Cosumidor 	47 consumiu, valor 29
+Produtor 	55 produziu um item, valor do item 69
+Cosumidor 	48 consumiu, valor 92
+Produtor 	56 produziu um item, valor do item 91
+Cosumidor 	49 consumiu, valor 95
+Produtor 	57 produziu um item, valor do item 25
+Cosumidor 	50 consumiu, valor 58
+Produtor 	58 produziu um item, valor do item 97
+Cosumidor 	51 consumiu, valor 2
+Produtor 	59 produziu um item, valor do item 31
+Cosumidor 	52 consumiu, valor 54
+Produtor 	60 produziu um item, valor do item 4
+Cosumidor 	53 consumiu, valor 9
+Produtor 	61 produziu um item, valor do item 23
+Cosumidor 	54 consumiu, valor 45
+Produtor 	62 produziu um item, valor do item 67
+Cosumidor 	55 consumiu, valor 69
+Produtor 	63 produziu um item, valor do item 50
+Cosumidor 	56 consumiu, valor 91
+Produtor 	64 produziu um item, valor do item 25
+Cosumidor 	57 consumiu, valor 25
+Cosumidor 	58 consumiu, valor 97
+Cosumidor 	59 consumiu, valor 31
+Cosumidor 	60 consumiu, valor 4
+Cosumidor 	61 consumiu, valor 23
+Cosumidor 	62 consumiu, valor 67
+Cosumidor 	63 consumiu, valor 50
+Cosumidor 	64 consumiu, valor 25
+Programa chegou no seu final
+
+-----------------------------------------------------
+CONCLUSÃO
+
+Utilizando o comando kill permite controlar a comunicação entre diferentes processos. Assim podemos garantir os processos funcionando com segurança.
+Nesse exercicio podemos garantir que consumidor consuma somente aquilo que é produzido. Por sinais e memoria compartilhada garantimos o funcionamento do programa.
+
+-----------------------------------------------------

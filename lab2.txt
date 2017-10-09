@@ -1,0 +1,245 @@
+Luis Claudio C. Martins - 1512946
+QUESTÃO 1) Faça um programa para localizar determinado valor em um vetor de inteiros
+desordenado. O programa deve ser composto por no mínimo 4 processos filhos,
+em um mesmo nível, que devem ser responsáveis por procurar o valor em uma
+parte do vetor cada. Ao encontrar o valor, o processo deve imprimir:
+Filho <PID> Encontrou na posição # do vetor.
+Caso o processo não encontre, deve imprimir:
+Filho <PID> Não encontrou ocorrência do valor.
+Explique o funcionamento do seu código
+lab2-1.C
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+int main(void)
+{
+	int pidFilho[4];
+	int pidPai = getpid();
+	int vet[10] = {0,1,23,34,4,75,69,79,18,9,10};
+	int size_vet = 10, qtd_pid = 4;
+	int procurado = 9;
+	
+	printf( "[dad] pid %d\n", pidPai);
+
+	for ( int i = 0; i < 4; i++ )
+	{
+		if (fork() == 0)
+		{
+			pidFilho[i] = getpid();
+			printf( "[son] pid %d from pid %d\n", pidFilho[i], getppid());
+			
+			for(int ini = i; ini < size_vet; ini += 4)
+			{
+				if(procurado == vet[ini])
+				{
+					printf("\nFilho %d achou o elemento procurado %d\n", i, vet[ini]);
+					exit(0);
+				}
+			}
+			exit(0);
+		}
+	}
+	
+
+	for ( int i = 0; i < 3; i++ )
+		wait( NULL );
+	
+}
+
+COMPILAÇÃO E EXECUÇÃO
+$ gcc -o lab2-1 lab2-1.c
+$ ./lab2-1
+[dad] pid 2691
+[son] pid 2695 from pid 2691
+[son] pid 2693 from pid 2691
+
+Filho 1 achou o elemento procurado 9
+[son] pid 2692 from pid 2691
+[son] pid 2694 from pid 2691
+
+CONCLUSÃO
+Crio um filho e faco ele procurar em um index o elemento procurado inicializado em uma variavel. Caso ele encontre eu finalizo o processo. Caso contrario mando ele andar 4 possicoes a frente no vetor.
+
+
+
+
+
+
+
+
+
+
+
+
+QUESTÃO 2) Faça um programa que deve realizar a soma de 2 matrizes 3 X 3. O programa
+deve ser estruturado em no mínimo 3 processos que fazem a soma de cada linha
+da matriz. Cada processo exibe, ao terminar a soma, os valores para a linha da
+matriz. Atenção para exibir as linhas na ordem correta. Explique o funcionamento
+do seu código. Explique como você controla a exibição de cada linha da matriz na
+ordem correta.
+-----------------------------------------------------
+lab2-2.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+
+int main(void)
+{
+	int pidFilho[3];
+	int pidPai = getpid();
+	int matriz[3][3] = {{1,2,3},{4,5,6},{7,8,9}};
+	int matriz2[3][3] = {{1,2,3},{4,5,6},{7,8,9}};
+	int size_matriz = 3, qtd_pid = 3;
+	int soma = 0;
+	
+	printf("[dad] pid %d\n", pidPai);
+	for( int i = 0; i < qtd_pid; i++ )
+	{
+		if (fork() == 0)
+		{
+			pidFilho[i] = getpid();
+			//printf( "[son] pid %d from pid %d\n", pidFilho[i], getppid());
+			
+			for(int j = 0; j < size_matriz; j++)
+			{
+				matriz[i][j] = matriz[i][j] + matriz2[i][j];
+				printf("%d ", matriz[i][j]); 
+				//exit(0);
+			}
+			printf("\n");
+			exit(0);
+		}
+	}
+
+	for ( int i = 0; i < 3; i++ )
+		wait( NULL );
+}
+
+COMPILAÇÃO E EXECUÇÃO
+2 4 6 
+14 16 18 
+8 10 12 
+-----------------------------------------------------
+CONCLUSÃO
+Inicializo a duas matrizes {{1,2,3},{4,5,6},{7,8,9}} e crio um processo pai.
+Para cada linha eu crio um filho e esse filho soma os elementos da segunda matriz na primeira e assim sucessivamente.
+
+
+
+
+
+
+
+QUESTÃO 
+3) Faça um programa que simule a SHELL, ou seja, o programa fica aguardando
+comandos, ao receber um comando, o processo pai se duplica e designa a
+execução do comando ao filho. Quando o filho acaba de executar, o pai volta a
+esperar um novo comando.
+a) Teste para os seguintes comandos:
+ls - Lista os arquivos/diretórios do diretório corrente
+ps - exibe os processos que estão executando no momento
+pwd - exibe o diretório atual
+O seu programa deve permitir a execução de comandos com argumentos.
+b) Teste para os seguintes comandos:
+echo "Escreva uma mensagem aqui" - exibe a mensagem entre aspas
+cat "nome de um arquivo" - exibe o contéudo do arquivo cujo nome é
+passado no parâmetro
+grep "palavra" "nome de um arquivo" - exibe as ocorrências da palavra
+dentro do arquivo informado
+c) Escreva um programa qualquer, compile-o e utilize o programa SHELL para
+executá-lo.
+Explique o funcionamento do seu código.
+-----------------------------------------------------
+lab2-3.c
+//
+//  lab2-3.c
+//  lab2
+//
+//  Created by Luis Claudio Cantanhede Martins on 01/09/17.
+//  Copyright © 2017 Luis Claudio Cantanhede Martins. All rights reserved.
+//
+
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
+
+int main(void){
+    
+    char *aux = NULL;
+    char *argv[100];
+    char comando[100];
+    char raiz[100];
+    
+    int status;
+    int i = 0;
+    char *token;
+    
+    while(1){
+        
+        //Limpa os comandos
+        strcpy(comando, "");
+        strcpy(raiz, "");
+        
+        printf("Diga seu comando: ");
+        scanf("%[^\n]%*c", comando);
+        
+        token = strtok(comando," \"");
+        
+        while(token != NULL) {
+            argv[i] = token;
+            i++;
+            token = strtok(NULL," \"");
+        }
+        
+        argv[i] = NULL;
+        strcat(raiz, argv[0]);
+        
+        
+        if (fork() != 0){
+            
+            printf("\nPai inicializado \n");
+            waitpid(-1,&status,0);
+            i = 0;
+            printf("\nPai finalizado \n");
+        }
+        else {
+            printf("\nFilho iniciado \n");
+            printf("Raiz: %s\n", raiz);
+            execvp(raiz, argv);
+            printf("\nFilho finalizado \n");
+        }
+        
+    }
+    
+    return 0;
+}
+-----------------------------------------------------
+COMPILAÇÃO E EXECUÇÃO
+$ gcc -o lab2-3 lab2-3.c
+$ ./lab2-3
+-----------------------------------------------------
+RESULTADO
+Diga seu comando: echo ˜Teste da shell˜
+
+Pai inicializado 
+
+Filho iniciado 
+Raiz: echo
+Teste da shell
+
+Pai finalizado 
+Diga seu comando: 
+-----------------------------------------------------
+CONCLUSÃO
+O programa pede a entrada de um comando para shell e armazena esse comando na string comando.
+Com as funcoes de strcat e strtok organizo os comando na string raiz.
+Apos isso pai gera um filho que executa o comando ditado e volta para executar mais uma vez o loop
+-----------------------------------------------------
+
